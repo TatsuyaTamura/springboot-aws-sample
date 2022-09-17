@@ -1,0 +1,52 @@
+#!/bin/sh
+# システムアップデート
+sudo yum update -y
+
+# JRE17 インストール
+sudo yum install -y java-17-amazon-corretto
+
+# AWSのライブラリをインストール
+sudo amazon-linux-extras install epel -y
+
+# 環境変数の設定
+sudo sh -c "echo 'SPRING_PROFILES_ACTIVE=dev' >> /etc/sysconfig/aws-sample-worker.conf"
+
+# aws-sample起動シェルスクリプト作成
+sudo touch /usr/local/bin/aws-sample-worker.sh
+sudo chmod a+xw /usr/local/bin/aws-sample-worker.sh
+cat <<EOF > /usr/local/bin/aws-sample-worker.sh
+#!/bin/sh
+sudo aws s3 cp s3://(バケット名)/aws-sample-worker.jar /usr/local/bin
+sudo chmod 500 /usr/local/bin/aws-sample-worker.jar
+sudo chown -R ec2-user:ec2-user /usr/local/bin
+java -jar /usr/local/bin/aws-sample-worker.jar
+EOF
+
+# jarのサービス登録
+sudo touch /etc/systemd/system/aws-sample-worker.service
+sudo chmod a+xw /etc/systemd/system/aws-sample-worker.service
+cat <<EOF > /etc/systemd/system/aws-sample-worker.service
+[Unit]
+Description=AWS Sample Worker
+
+[Service]
+ExecStart=/usr/local/bin/aws-sample-worker.sh
+Restart=always
+Type=simple
+User=ec2-user
+Group=ec2-user
+SuccessExitStatus=143
+EnvironmentFile=/etc/sysconfig/aws-sample-worker.conf
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Daemonリロード
+sudo systemctl daemon-reload
+
+# 自動起動の設定
+sudo systemctl enable aws-sample-worker
+
+# 起動
+sudo systemctl start aws-sample-worker
